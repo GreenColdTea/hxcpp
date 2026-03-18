@@ -38,10 +38,15 @@ public:
    inline VirtualArray Add(const T &inVal);
 
 
-   inline bool operator==(const Dynamic &value) const { return value==*this; }
+   inline bool operator==(const Dynamic &value) const
+   {
+      hx::Object* lhs = (hx::Object*)mPtr;
+      hx::Object* rhs = value.mPtr;
+      return lhs == rhs || (lhs && rhs && lhs->__Compare(rhs) == 0);
+   }
    template<typename SOURCE_> inline bool operator==( const Array<SOURCE_> &inRHS );
 
-   inline bool operator!=(Dynamic value) const { return value!=*this; }
+   inline bool operator!=(const Dynamic &value) const { return !(*this == value); }
    template<typename SOURCE_> inline bool operator!=( const Array<SOURCE_> &inRHS ) { return inRHS!=*this; }
 
 };
