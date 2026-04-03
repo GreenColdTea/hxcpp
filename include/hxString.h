@@ -331,7 +331,7 @@ public:
 
    inline int cca(int inPos) const
    {
-      if ((unsigned)inPos>=length) return 0;
+      if ( (inPos>=length) || (inPos<0) ) return 0;
       #ifdef HX_SMART_STRINGS
       if (isUTF16Encoded())
          return __w[inPos];
@@ -374,6 +374,9 @@ public:
 
    // This is used by the string-wrapped-as-dynamic class
    hx::Val __Field(const ::String &inString, hx::PropertyAccess inCallProp);
+
+   // Allows for reflection to be able to get the static functions
+   static bool __GetStatic(const String&, Dynamic&, hx::PropertyAccess);
 
    // The actual implementation.
    // Note that "__s" is const - if you want to change it, you should create a new string.

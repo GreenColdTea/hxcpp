@@ -234,7 +234,7 @@ class Compiler
       return args;
    }
 
-   function getArgs(inFile:File)
+   public function getArgs(inFile:File)
    {
       var nvcc = inFile.isNvcc();
       var asm = inFile.isAsm();
