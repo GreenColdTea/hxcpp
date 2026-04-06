@@ -5,12 +5,15 @@
 
 using namespace hx;
 
+
+
 extern hx::Class __StringClass;
 namespace hx
 {
 
 extern hx::Class hxEnumBase_obj__mClass;
 extern hx::Class Object__mClass;
+
 
 hx::Class __BoolClass;
 hx::Class __IntClass;
@@ -22,6 +25,7 @@ hx::Class __VoidClass;
 hx::Class __ObjcClass;
 #endif
 
+
 hx::Class &GetBoolClass() { return __BoolClass; }
 hx::Class &GetIntClass() { return __IntClass; }
 hx::Class &GetFloatClass() { return __FloatClass; }
@@ -29,7 +33,10 @@ hx::Class &GetInt64Class() { return __Int64Class; }
 hx::Class &GetPointerClass() { return __PointerClass; }
 hx::Class &GetVoidClass() { return __VoidClass; }
 
+
+
 // --- "Simple" Data Objects ---------------------------------------------------
+
 
 Dynamic DynTrue;
 Dynamic DynFalse;
@@ -43,6 +50,7 @@ public:
    {
       return inClassId==1 || inClassId==(int)_hx_ClassId || inClassId==(int)hx::clsIdFloat;
    }
+
 
    inline void *operator new( size_t inSize, hx::NewObjectType inAlloc=NewObjAlloc, const char *inName="Int")
       { return hx::Object::operator new(inSize,inAlloc,inName); }
@@ -64,8 +72,10 @@ public:
       return diff < 0 ? -1 : diff==0 ? 0 : 1;
    }
 
+
    int mValue;
 };
+
 
 class BoolData : public hx::Object
 {
@@ -91,8 +101,11 @@ public:
       return diff < 0 ? -1 : diff==0 ? 0 : 1;
    }
 
+
    bool mValue;
 };
+
+
 
 class DoubleData : public hx::Object
 {
@@ -105,12 +118,12 @@ public:
 
    hx::Class __GetClass() const HXCPP_OVERRIDE { return __FloatClass; }
 
-   int __GetType() const HXCPP_OVERRIDE { return vtFloat; }
+   virtual int __GetType() const HXCPP_OVERRIDE { return vtFloat; }
    String toString() HXCPP_OVERRIDE { return String(mValue); }
    String __ToString() const HXCPP_OVERRIDE { return String(mValue); }
    double __ToDouble() const HXCPP_OVERRIDE { return mValue; }
    int __ToInt() const HXCPP_OVERRIDE { return (int)mValue; }
-   cpp::Int64 __ToInt64() const HXCPP_OVERRIDE { return mValue; }
+   cpp::Int64 __ToInt64() const HXCPP_OVERRIDE { return (cpp::Int64)mValue; }
 
    int __Compare(const hx::Object *inRHS) const HXCPP_OVERRIDE
    {
@@ -121,8 +134,10 @@ public:
       return mValue < rval ? -1 :  1;
    }
 
+
    double mValue;
 };
+
 
 class Int64Data : public hx::Object
 {
@@ -135,13 +150,13 @@ public:
 
    hx::Class __GetClass() const HXCPP_OVERRIDE { return __Int64Class; }
 
-   int __GetType() const HXCPP_OVERRIDE { return vtInt64; }
+   virtual int __GetType() const HXCPP_OVERRIDE { return vtInt64; }
    String toString() HXCPP_OVERRIDE { return String(mValue); }
    String __ToString() const HXCPP_OVERRIDE { return String(mValue); }
-   double __ToDouble() const HXCPP_OVERRIDE { return mValue; }
+   double __ToDouble() const HXCPP_OVERRIDE { return (double)mValue; }
    int __ToInt() const HXCPP_OVERRIDE { return (int)mValue; }
    cpp::Int64 __ToInt64() const HXCPP_OVERRIDE { return mValue; }
-   void __GetFields(Array<String>& outFields) HXCPP_OVERRIDE
+   void __GetFields(Array<String> &outFields) HXCPP_OVERRIDE
    {
       outFields->push( HX_HCSTRING("hi","\x01","\x5b","\x00","\x00") );
       outFields->push( HX_HCSTRING("lo","\x83","\x5e","\x00","\x00") );
@@ -176,8 +191,13 @@ public:
       return mValue < rval ? -1 :  1;
    }
 
-   cpp::Int64 mValue;
+
+
+
+    cpp::Int64 mValue;
 };
+
+
 
 class PointerData : public hx::Object
 {
@@ -187,7 +207,7 @@ public:
 
    PointerData(void *inValue) : mValue(inValue) {};
 
-   HX_IS_INSTANCE_OF enum { _hx_ClassId = hx::clsIdPointer };
+    HX_IS_INSTANCE_OF enum { _hx_ClassId = hx::clsIdPointer };
 
    hx::Class __GetClass() const HXCPP_OVERRIDE { return __PointerClass; }
 
@@ -208,8 +228,10 @@ public:
       return mValue < r ? -1 : mValue==r ? 0 : 1;
    }
 
+
    void *mValue;
 };
+
 
 class StructData : public hx::Object
 {
@@ -285,7 +307,12 @@ public:
    cpp::DynamicHandlerFunc mHandler;
 };
 
-} // namespace hx
+
+
+
+
+}
+
 
 namespace cpp
 {
@@ -300,9 +327,12 @@ Dynamic CreateDynamicPointer(void *inValue) {
 // --- Struct -------------------------------------------------
 
 Dynamic CreateDynamicStruct(const void *inValue, int inSize, DynamicHandlerFunc inFunc)
+
 {
    return new hx::StructData(inValue,inSize,inFunc); }
 }
+
+
 
 // --- Dynamic -------------------------------------------------
 
@@ -324,6 +354,7 @@ static hx::Object *fromInt(int inVal)
 }
 
 Dynamic::Dynamic(bool inVal) : super( inVal ? hx::DynTrue.mPtr : hx::DynFalse.mPtr ) { }
+
 
 Dynamic::Dynamic(int inVal)
 {
@@ -389,6 +420,7 @@ Dynamic::Dynamic(double inVal)
       mPtr = (hx::Object *)new DoubleData(inVal);
 }
 
+
 Dynamic::Dynamic(cpp::Int64 inVal)
 {
    int ival = (int)inVal;
@@ -403,6 +435,7 @@ Dynamic::Dynamic(cpp::Int64 inVal)
       mPtr = (hx::Object *)new Int64Data(inVal);
 }
 
+
 Dynamic::Dynamic(cpp::UInt64 inVal)
 {
    if ( (int)inVal==inVal && inVal<256 )
@@ -415,6 +448,10 @@ Dynamic::Dynamic(cpp::UInt64 inVal)
    else
       mPtr = (hx::Object *)new Int64Data(inVal);
 }
+
+
+
+
 
 Dynamic::Dynamic(float inVal)
 {
@@ -429,6 +466,7 @@ Dynamic::Dynamic(const String &inVal) :
 
 Dynamic::Dynamic(const HX_CHAR *inVal) :
   super( inVal ? String(inVal).__ToObject() : 0 ) { }
+
 
 Dynamic Dynamic::operator+(const Dynamic &inRHS) const
 {
@@ -477,6 +515,8 @@ Dynamic Dynamic::operator+(const cpp::Variant &v) const
    return Cast<double>() + v.asDouble();
 }
 
+
+
 double Dynamic::operator%(const Dynamic &inRHS) const
 {
    if (mPtr->__GetType()==vtInt && inRHS.mPtr->__GetType()==vtInt)
@@ -493,6 +533,7 @@ hx::IndexRef Dynamic::operator[](int inIndex)
 {
    return hx::IndexRef(mPtr,inIndex);
 }
+
 
 void Dynamic::ThrowBadFunctionError()
 {
@@ -520,7 +561,10 @@ void InvalidInterface()
 {
    hx::Throw(HX_INVALID_INTERFACE);
 }
+
+
 }
+
 
 static bool NoCast(hx::Object *) { return false; }
 static bool IsFloat(hx::Object *inPtr)
