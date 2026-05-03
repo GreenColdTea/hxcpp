@@ -116,18 +116,18 @@ public:
             return;
         }
 
-        if (length <= std::numeric_limits<uint8_t>::max())
-        {
+        if (length <= (std::numeric_limits<uint8_t>::max)())
+         {
             SortImpl<uint8_t>(base, length, sorter);
-        }
-        else if (length <= std::numeric_limits<uint16_t>::max())
-        {
+         }
+         else if (length <= (std::numeric_limits<uint16_t>::max)())
+         {
             SortImpl<uint16_t>(base, length, sorter);
-        }
-        else
-        {
+         }
+         else
+         {
             SortImpl<uint32_t>(base, length, sorter);
-        }
+         }
     }
 };
 
