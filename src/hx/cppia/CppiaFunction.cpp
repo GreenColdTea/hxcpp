@@ -12,6 +12,12 @@ static int sTypeSize[] = { 0, 0, sizeof(hx::Object *), sizeof(String), sizeof(Fl
 
 String sInvalidArgCount = HX_CSTRING("Invalid arguement count");
 
+String sUnloadedMessage = HX_CSTRING("Called a function from a cppia class that has been unloaded");
+
+#ifdef CPPIA_JIT
+static void SLJIT_CALL unloadedCompiled(CppiaCtx *ctx);
+#endif
+
 
 #ifdef CPPIA_JIT
 void SLJIT_CALL argToInt(CppiaCtx *ctx) { ctx->pushInt( (* (hx::Object **)(ctx->pointer))->__ToInt() ); }
@@ -97,7 +103,7 @@ ScriptCallable::ScriptCallable(CppiaModule &inModule,ScriptNamedFunction *inFunc
    const char *signature = inFunction->signature;
    int argCount = strlen(signature)-1;
    if (argCount<0)
-      throw "ScriptNamedFunction: Invalid arg count";
+      throw cppiaError("Native function %s has an empty signature", inFunction->name ? inFunction->name : "?");
 
    args.resize(argCount);
    hasDefault.resize(argCount);
@@ -128,7 +134,7 @@ ScriptCallable::ScriptCallable(CppiaModule &inModule,ScriptNamedFunction *inFunc
             arg.storeType = fsObject;
             break;
          default:
-            throw "Bad haxe signature";
+            throw cppiaError("Native function %s has an unsupported type '%c' in its signature \"%s\"", inFunction->name ? inFunction->name : "?", signature[i+1], signature);
       }
    }
    body = new RelayExpr(inFunction->execute);
@@ -143,7 +149,7 @@ ScriptCallable::ScriptCallable(CppiaModule &inModule,ScriptNamedFunction *inFunc
 ScriptCallable::~ScriptCallable()
 {
    #ifdef CPPIA_JIT
-   if (compiled)
+   if (compiled && compiled != unloadedCompiled)
       CppiaCompiler::freeCompiled(compiled);
    #endif
 }
@@ -680,6 +686,41 @@ void ScriptCallable::compile()
    }
 }
 #endif
+
+struct UnloadedBody : public CppiaExpr
+{
+   const char *getName() HXCPP_OVERRIDE { return "UnloadedBody"; }
+
+   void runVoid(CppiaCtx *ctx) HXCPP_OVERRIDE
+   {
+      hx::Throw( sUnloadedMessage );
+   }
+
+   int         runInt(CppiaCtx *ctx) HXCPP_OVERRIDE { runVoid(ctx); return 0; }
+   Float       runFloat(CppiaCtx *ctx) HXCPP_OVERRIDE { runVoid(ctx); return 0; }
+   ::String    runString(CppiaCtx *ctx) HXCPP_OVERRIDE { runVoid(ctx); return null(); }
+   hx::Object *runObject(CppiaCtx *ctx) HXCPP_OVERRIDE { runVoid(ctx); return 0; }
+};
+
+static UnloadedBody sUnloadedBody;
+
+#ifdef CPPIA_JIT
+static void SLJIT_CALL unloadedCompiled(CppiaCtx *ctx)
+{
+   TRY_NATIVE
+   hx::Throw( sUnloadedMessage );
+   CATCH_NATIVE
+}
+#endif
+
+void ScriptCallable::deactivate()
+{
+   body = &sUnloadedBody;
+   #ifdef CPPIA_JIT
+   compiled = unloadedCompiled;
+   #endif
+}
+
 
 // --- CppiaClosure ----
 

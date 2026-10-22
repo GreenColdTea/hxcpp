@@ -9,7 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 
-#ifdef EMSCRIPTEN
+#ifdef __EMSCRIPTEN__
    #include <emscripten/stack.h>
    #ifdef HXCPP_SINGLE_THREADED_APP
       // Use provided tools to measure stack extent
@@ -194,7 +194,7 @@ static bool sGcVerifyGenerational = false;
 #endif
 
 
-#if HX_HAS_ATOMIC && (HXCPP_GC_DEBUG_LEVEL==0) && !defined(HXCPP_GC_VERIFY) && !defined(EMSCRIPTEN)
+#if HX_HAS_ATOMIC && (HXCPP_GC_DEBUG_LEVEL==0) && !defined(HXCPP_GC_VERIFY) && !defined(__EMSCRIPTEN__)
   #if defined(HX_MACOS) || defined(HX_WINDOWS) || defined(HX_LINUX)
   enum { MAX_GC_THREADS = 4 };
   #else
@@ -402,6 +402,10 @@ enum LocalAllocState { lasNew, lasRunning, lasStopped, lasWaiting, lasTerminal }
 
 
 static void MarkLocalAlloc(LocalAllocator *inAlloc,hx::MarkContext *__inCtx);
+
+#if defined(HXCPP_SCRIPTABLE) && defined(HXCPP_GC_GENERATIONAL)
+namespace hx { void MarkCppiaStatics(hx::MarkContext *__inCtx); }
+#endif
 #ifdef HXCPP_VISIT_ALLOCS
 static void VisitLocalAlloc(LocalAllocator *inAlloc,hx::VisitContext *__inCtx);
 #endif
@@ -3542,11 +3546,11 @@ public:
       #if defined(SHOW_MEM_EVENTS_VERBOSE) || defined(SHOW_FRAGMENTATION_BLOCKS)
       if (inJustBorrowing)
       {
-         GCLOG("Borrow Blocks %d = %d k\n", mAllBlocks.size(), (mAllBlocks.size() << IMMIX_BLOCK_BITS)>>10);
+         GCLOG("Borrow Blocks %d = %d k\n", mAllBlocks.size(), (int)(GetWorkingMemory() >> 10));
       }
       else
       {
-         GCLOG("Blocks %d = %d k\n", mAllBlocks.size(), (mAllBlocks.size() << IMMIX_BLOCK_BITS)>>10);
+         GCLOG("Blocks %d = %d k\n", mAllBlocks.size(), (int)(GetWorkingMemory() >> 10));
       }
       #endif
 
@@ -4525,7 +4529,7 @@ public:
    {
       void *info = (void *)(size_t)inId;
 
-      #if defined(EMSCRIPTEN)
+      #if defined(__EMSCRIPTEN__)
          // Only one thread
       #else
          sThreadWake[inId] = new std::condition_variable_any();
@@ -4703,6 +4707,11 @@ public:
 
       hx::MarkClassStatics(&mMarker);
 
+      #if defined(HXCPP_SCRIPTABLE) && defined(HXCPP_GC_GENERATIONAL)
+      if (inGenerational)
+         hx::MarkCppiaStatics(&mMarker);
+      #endif
+
       {
       hx::AutoMarkPush info(&mMarker,"Roots","root");
 
@@ -4768,6 +4777,32 @@ public:
       MEM_STAMP(tMarked);
 
       hx::FindZombies(mMarker);
+
+      // Weak-key hashes are ephemerons: a value is reachable only when both
+      // the hash and its key are reachable. Values marked here may in turn
+      // make keys in other weak hashes reachable, so iterate to a fixed point.
+      bool markedWeakValue;
+      do
+      {
+         markedWeakValue = false;
+         mMarker.init();
+         for(int i=0;i<hx::sWeakHashList.size();i++)
+         {
+            hx::HashRoot *hash = hx::sWeakHashList[i];
+            if (hx::IsWeakRefValid(hash))
+               markedWeakValue = hash->markWeakValues(&mMarker) || markedWeakValue;
+         }
+         if (markedWeakValue)
+         {
+            #ifdef HX_MULTI_THREAD_MARKING
+            mMarker.releaseJobs();
+            StartThreadJobs(tpjMark, MAX_GC_THREADS, true);
+            #else
+            mMarker.processMarkStack();
+            #endif
+         }
+      }
+      while(markedWeakValue);
 
       hx::RunFinalizers();
 
@@ -5234,7 +5269,7 @@ public:
       #endif
 
       // Large alloc target
-      int blockSize =  mAllBlocks.size()<<IMMIX_BLOCK_BITS;
+      size_t blockSize =  GetWorkingMemory();
       if (blockSize > mLargeAllocSpace)
          mLargeAllocSpace = blockSize;
       mLargeAllocForceRefresh = mLargeAllocated + mLargeAllocSpace;

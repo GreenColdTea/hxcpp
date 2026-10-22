@@ -158,10 +158,10 @@ extern int gPauseForCollect;
 
 
 // Minimum total memory - used + buffer for new objects
-extern int sgMinimumWorkingMemory;
+extern size_t sgMinimumWorkingMemory;
 
 // Minimum free memory - not counting used memory
-extern int sgMinimumFreeSpace;
+extern size_t sgMinimumFreeSpace;
 
 // Also ensure that the free memory is larger than this amount of used memory
 extern int sgTargetFreeSpacePercentage;
@@ -492,7 +492,7 @@ HXCPP_EXTERN_CLASS_ATTRIBUTES void NewMarkedObject(hx::Object *inPtr);
 
 inline void MarkAlloc(void *inPtr ,hx::MarkContext *__inCtx)
 {
-   #ifdef EMSCRIPTEN
+   #ifdef __EMSCRIPTEN__
    // Unaligned must be constants...
    if ( !( ((size_t)inPtr) & 3) )
    #endif
@@ -502,7 +502,7 @@ inline void MarkAlloc(void *inPtr ,hx::MarkContext *__inCtx)
 }
 inline void MarkObjectAlloc(hx::Object *inPtr ,hx::MarkContext *__inCtx)
 {
-   #ifdef EMSCRIPTEN
+   #ifdef __EMSCRIPTEN__
    // Unaligned must be constants...
    if ( !( ((size_t)inPtr) & 3) )
    #endif

@@ -45,8 +45,6 @@
   <flag value="-mappletvos-version-min=9.0"/>
   <flag value="-DAPPLETV=APPLETV"/>
   <flag value="-DAPPLETVSIM=APPLETVSIM"/>
-  <flag value="-DENABLE_BITCODE=YES"/>
-  <flag value="-fembed-bitcode"/>
   <flag value="-fobjc-arc" if="OBJC_ARC" />
   <flag value="-DOBJC_ARC" if="OBJC_ARC" />
   <flag value="-Wno-parentheses" />
@@ -78,7 +76,6 @@
   <flag value="x86_64" if="HXCPP_M64"/>
   <flag value="-isysroot"/>
   <flag value="${DEVELOPER_DIR}/Platforms/AppleTVSimulator.platform/Developer/SDKs/AppleTVSimulator${TVOS_VER}.sdk"/>
-  <flag value="-Wl,-undefined,dynamic_lookup"/>
   <flag value="-fpic"/>
   <flag value="-fPIC"/>
   <flag value="-fvisibility=hidden"/>

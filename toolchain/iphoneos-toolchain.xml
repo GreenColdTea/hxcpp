@@ -9,7 +9,7 @@
 <set name="ARCH" value ="-64" if="HXCPP_ARM64" />
 
 <set name="HXCPP_USE_LIBTOOL" value="1" />
-<set name="HXCPP_LIBTOOL" value="xcrun --sdk iphoneos${IPHONE_VER} libtool" />
+<set name="HXCPP_LIBTOOL" value="xcrun --sdk iphoneos${IPHONE_VER} libtool -no_warning_for_no_symbols" />
 <include name="toolchain/gcc-toolchain.xml"/>
 <!--<path name="${DEVELOPER_DIR}/Platforms/iPhoneOS.platform/Developer/usr/bin" />-->
 
@@ -43,9 +43,6 @@
   <flag value="-miphoneos-version-min=${HXCPP_IOS_MIN_VERSION}" if="HXCPP_IOS_MIN_VERSION" />
   <flag value="-fobjc-arc" if="OBJC_ARC" />
   <flag value="-DOBJC_ARC" if="OBJC_ARC" />
-  <flag value="-DENABLE_BITCODE=YES"/>
-  <flag value="-fembed-bitcode" unless="debug" />
-  <flag value="-fembed-bitcode-marker" if="debug" />
   <flag value="-Wno-parentheses" />
   <flag value="-Wno-null-dereference" unless="HXCPP_GCC"/>
   <flag value="-Wno-unused-value" />
@@ -90,7 +87,12 @@
   <flag value="arm64" if="HXCPP_ARM64" />
   <flag value="-isysroot"/>
   <flag value="${DEVELOPER_DIR}/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS${IPHONE_VER}.sdk"/>
-  <flag value="-Wl,-undefined,dynamic_lookup"/>
+  <!-- <flag value="-miphoneos-version-min=3.0" if="HXCPP_GCC" unless="HXCPP_ARMV7" />
+  <flag value="-miphoneos-version-min=5.0" if="HXCPP_ARMV7" /> -->
+  <flag value="-miphoneos-version-min=9.0" unless="HXCPP_IOS_MIN_VERSION" />
+  <flag value="-miphoneos-version-min=${HXCPP_IOS_MIN_VERSION}" if="HXCPP_IOS_MIN_VERSION" />
+  <flag value="-fobjc-arc" if="OBJC_ARC" />
+  <flag value="-DOBJC_ARC" if="OBJC_ARC" />
   <flag value="-fpic"/>
   <flag value="-fPIC"/>
   <flag value="-fvisibility=hidden"/>

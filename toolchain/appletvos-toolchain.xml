@@ -44,8 +44,6 @@
   <flag value="-fno-stack-protector"/>
   <flag value="-DAPPLETV=APPLETV"/>
   <flag value="-DAPPLETVOS=APPLETVOS"/>
-  <flag value="-fembed-bitcode"/>
-  <flag value="-DENABLE_BITCODE=YES"/>
   <include name="toolchain/common-defines.xml" />
   <flag value="-DHXCPP_BIG_ENDIAN" if="HXCPP_BIG_ENDIAN"/>
   <flag value="-I${HXCPP}/include"/>
@@ -70,7 +68,6 @@
   <flag value="arm64" if="HXCPP_ARM64" />
   <flag value="-isysroot"/>
   <flag value="${DEVELOPER_DIR}/Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS${TVOS_VER}.sdk"/>
-  <flag value="-Wl,-undefined,dynamic_lookup"/>
   <flag value="-fpic"/>
   <flag value="-fPIC"/>
   <flag value="-fvisibility=hidden"/>

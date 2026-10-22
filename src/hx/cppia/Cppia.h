@@ -58,6 +58,11 @@ class  ScriptRegistered;
 class  HaxeNativeClass;
 class  HaxeNativeInterface;
 
+// Format a message to throw.
+const char *cppiaError(const char *inFormat, ...);
+// Same, with the haxe source position of the expression appended.
+const char *cppiaExprError(CppiaExpr *e, const char *inFormat, ...);
+
 enum CppiaOp
 {
    #define CPPIA_OP(ident, name, val) ident = val,
@@ -152,6 +157,10 @@ extern int gArrayArgCount[];
 typedef std::map<int,CppiaStackVar *> CppiaStackVarMap;
 
 extern String sInvalidArgCount;
+extern String sUnloadedMessage;
+
+void _hx_cppia_track_expr(void *inExpr);
+void _hx_cppia_untrack_expr(void *inExpr);
 
 struct CppiaExpr
 {
@@ -161,6 +170,18 @@ struct CppiaExpr
    const char *functionName;
    int haxeTypeId;
 
+   void *operator new(size_t inSize)
+   {
+      void *result = ::operator new(inSize);
+      _hx_cppia_track_expr(result);
+      return result;
+   }
+
+   void operator delete(void *inPtr)
+   {
+      _hx_cppia_untrack_expr(inPtr);
+      ::operator delete(inPtr);
+   }
 
    CppiaExpr() : line(0), filename(0), className(0), functionName(0)
    {
@@ -283,6 +304,8 @@ struct ScriptCallable : public CppiaDynamicExpr
    int                          captureSize;
 
 
+   void deactivate();
+
    ScriptCallable(CppiaStream &stream);
    ScriptCallable(CppiaExpr *inBody);
    ScriptCallable(CppiaModule &inModule,ScriptNamedFunction *inFunction);
@@ -372,9 +395,12 @@ public:
    std::vector< TypeData * >       types;
    std::vector< CppiaClassInfo * > classes;
    std::vector< CppiaExpr * >      markable;
+
+   hx::UnorderedSet< CppiaExpr * > allExprs;
    hx::UnorderedSet<int>           allFileIds;
+
    typedef std::map< std::string, int > InterfaceSlots;
-   InterfaceSlots                  interfaceSlots;
+   static InterfaceSlots           interfaceSlots;
 
    StackLayout                     *layout;
    CppiaClassInfo                  *linkingClass;
@@ -384,14 +410,18 @@ public:
 
    ScriptCallable                  *main;
 
+   bool                            unloaded;
+
    CppiaModule();
    ~CppiaModule();
 
+   void unload();
    void link();
    void compile();
    void setDebug(CppiaExpr *outExpr, int inFileId, int inLine);
    void boot(CppiaCtx *ctx);
    void where(CppiaExpr *e);
+   const char *linkError(CppiaExpr *e, const char *inKind, const char *inClass, const char *inField);
    void mark(hx::MarkContext *ctx);
    void visit(hx::VisitContext *ctx);
    int  getInterfaceSlot(const std::string &inName);
@@ -512,6 +542,8 @@ struct CppiaVar
    int              typeId;
    int              offset;
    String           name;
+   // If using live modules, this is the module that owns this variable.
+   CppiaModule      *owner;
    FieldStorage     storeType;
    CppiaFunction    *dynamicFunction;
    ExprType         exprType;
@@ -650,7 +682,11 @@ public:
    bool      containsPointers;
    int       dynamicMapOffset;
    int       interfaceSlotSize;
+   int       vtableSlotCount;
+   int       hostVTableSlots;
+   bool      unloaded;
    void      **vtable;
+   std::vector<void **> superVtables;
    std::string name;
    std::map<int, void *> interfaceScriptTables;
    std::vector<ScriptNamedFunction *> nativeInterfaceFunctions;
@@ -704,13 +740,14 @@ public:
 
    void link();
    void linkTypes();
+   void deactivate();
 
 
    inline bool isNativeProperty(const String &inString);
    int __GetType();
    int getEnumIndex(String inName);
    bool implementsInterface(CppiaClassInfo *inInterface);
-   ScriptCallable *findFunction(bool inStatic,int inId);
+   ScriptCallable *findFunction(bool inStatic,int inId, CppiaModule &inFrom);
    ScriptCallable *findInterfaceFunction(const std::string &inName);
    ScriptCallable *findFunction(bool inStatic, const String &inName);
    ScriptCallable *findFunction(FunctionMap &inMap,const String &inName);
@@ -722,14 +759,17 @@ public:
       { return findFunction(staticGetters,inName); }
    inline ScriptCallable *findStaticSetter(const String &inName)
       { return findFunction(staticSetters,inName); }
-   CppiaEnumConstructor *findEnum(int inFieldId);
+   CppiaEnumConstructor *findEnum(int inFieldId, CppiaModule &inFrom);
    ExprType findFunctionType(CppiaModule &inModule, int inName);
-   CppiaFunction *findVTableFunction(int inId);
-   int findFunctionSlot(int inName);
-   CppiaVar *findVar(bool inStatic,int inId);
+   CppiaFunction *findVTableFunction(int inId, CppiaModule &inFrom);
+   int findFunctionSlot(int inName, CppiaModule &inFrom);
+   CppiaVar *findVar(bool inStatic,int inId, CppiaModule &inFrom);
+   int importType(CppiaModule &inFrom, int inTypeId);
 
    void *getHaxeBaseVTable();
    int getScriptVTableOffset();
+   void **getSuperVTable(int inSlot);
+   void freeSuperVTables();
 
    Dynamic getStaticValue(const String &inName,hx::PropertyAccess  inCallProp);
    bool hasStaticValue(const String &inName);
@@ -788,6 +828,7 @@ public:
          ctx = inCtx;
          frame = (hx::StackFrame *)ctx->stackAlloc(sizeof(hx::StackFrame));
          frame->position = inPosition;
+         frame->lineNumber = 0;
          #ifdef HXCPP_DEBUGGER
          frame->variables = 0;
          frame->catchables = 0;

@@ -2,6 +2,7 @@
 #include "Cppia.h"
 #include "CppiaStream.h"
 #include <stdlib.h>
+#include <stdarg.h>
 
 
 namespace hx
@@ -10,11 +11,42 @@ namespace hx
 
 static int sScriptId = 0;
 
+CppiaModule::InterfaceSlots CppiaModule::interfaceSlots;
+
 
 const char **sgNativeNameSlots = 0;
 int sgNativeNameSlotCount = 0;
 
 Array<Dynamic> gAllCppiaModules;
+
+#ifdef HXCPP_GC_GENERATIONAL
+void MarkCppiaStatics(hx::MarkContext *__inCtx)
+{
+   if (!gAllCppiaModules.mPtr)
+      return;
+
+   for(int i=0;i<gAllCppiaModules->length;i++)
+   {
+      hx::Object *module = gAllCppiaModules[i].mPtr;
+      if (module)
+         module->__Mark(__inCtx);
+   }
+}
+#endif
+
+static CppiaModule *sLoadingModule = 0;
+
+void _hx_cppia_track_expr(void *inExpr)
+{
+   if (sLoadingModule)
+      sLoadingModule->allExprs.insert((CppiaExpr *)inExpr);
+}
+
+void _hx_cppia_untrack_expr(void *inExpr)
+{
+   if (sLoadingModule)
+      sLoadingModule->allExprs.erase((CppiaExpr *)inExpr);
+}
 
 std::vector<hx::Resource> scriptResources;
 
@@ -29,8 +61,9 @@ CppiaModule::CppiaModule()
    creatingClass = 0;
    creatingFunction = 0;
    scriptId = ++sScriptId;
+   unloaded = false;
    strings = Array_obj<String>::__new(0,0);
-   if (sgNativeNameSlotCount>0)
+   if (sgNativeNameSlotCount>0 && interfaceSlots.empty())
       for(int i=2;i<sgNativeNameSlotCount;i++)
          interfaceSlots[sgNativeNameSlots[i]] = i;
 
@@ -52,18 +85,39 @@ void CppiaModule::setDebug(CppiaExpr *outExpr, int inFileId, int inLine)
 
 // --- CppiaModule -------------------------
 
+// Frees the code and leaves everything a raw pointer can still reach in place.
+void CppiaModule::unload()
+{
+   if (unloaded)
+      return;
+   unloaded = true;
+
+   for(int i=0;i<classes.size();i++)
+      if (classes[i])
+         classes[i]->deactivate();
+
+   main = 0;
+
+   for(hx::UnorderedSet<CppiaExpr *>::iterator i = allExprs.begin(); i != allExprs.end(); ++i)
+   {
+      ScriptCallable *callable = dynamic_cast<ScriptCallable *>(*i);
+      // ends up not freeing the module totally, we do suffer a cost. But it's small.
+      if (callable)
+         callable->deactivate();
+   }
+}
+
+
 CppiaModule::~CppiaModule()
 {
-   delete main;
-   for(int i=0;i<classes.size();i++)
-      delete classes[i];
+   unload();
 }
 
 void CppiaModule::link()
 {
    DBGLOG("Resolve registered - super\n");
    HaxeNativeClass::link();
-   
+
    DBGLOG("Resolve typeIds\n");
    for(int t=0;t<types.size();t++)
       types[t]->link(*this);
@@ -185,7 +239,10 @@ int CppiaModule::getInterfaceSlot(const std::string &inName)
    InterfaceSlots::iterator it = interfaceSlots.find(inName);
    if (it==interfaceSlots.end())
    {
-      int result = interfaceSlots.size()+1;
+      int result = 1;
+      for(InterfaceSlots::iterator used = interfaceSlots.begin(); used!=interfaceSlots.end(); ++used)
+         if (used->second >= result)
+            result = used->second + 1;
       interfaceSlots[inName] = result;
       return result;
    }
@@ -209,6 +266,37 @@ void CppiaModule::where(CppiaExpr *e)
    if (linkingClass && layout)
       CPPIALOG(" in %s::%p\n", linkingClass->name.c_str(), layout);
    CPPIALOG("   %s at %s:%d %s\n", e->getName(), e->filename, e->line, e->functionName);
+}
+
+static char sErrorBuffer[1024];
+
+const char *cppiaError(const char *inFormat, ...)
+{
+   va_list args;
+   va_start(args, inFormat);
+   vsnprintf(sErrorBuffer, sizeof(sErrorBuffer), inFormat, args);
+   va_end(args);
+   return sErrorBuffer;
+}
+
+const char *cppiaExprError(CppiaExpr *e, const char *inFormat, ...)
+{
+   char message[768];
+   va_list args;
+   va_start(args, inFormat);
+   vsnprintf(message, sizeof(message), inFormat, args);
+   va_end(args);
+   snprintf(sErrorBuffer, sizeof(sErrorBuffer), "%s (used at %s:%d in %s)", message,
+      e->filename ? e->filename : "?", e->line, e->functionName ? e->functionName : "?");
+   return sErrorBuffer;
+}
+
+const char *CppiaModule::linkError(CppiaExpr *e, const char *inKind, const char *inClass, const char *inField)
+{
+   return cppiaExprError(e,
+      "Bad link: %s %s.%s does not exist in this context. "
+      "The script might've been compiled against a different version.",
+      inKind, inClass, inField);
 }
 
 
@@ -263,7 +351,7 @@ void CppiaConst::fromStream(CppiaStream &stream)
    else if (tok=="SUPER")
       type = cSuper;
    else
-      throw "unknown const value";
+      throw cppiaError("Unknown constant type '%s'", tok.c_str());
 }
 
 
@@ -299,6 +387,9 @@ public:
 
    void boot() HXCPP_OVERRIDE
    {
+      if (cppia->unloaded)
+         hx::Throw( HX_CSTRING("Cannot boot a cppia module that has been unloaded") );
+
       if (booted)
          return;
 
@@ -319,6 +410,9 @@ public:
 
    void run() HXCPP_OVERRIDE
    {
+      if (cppia->unloaded)
+         hx::Throw( HX_CSTRING("Cannot run a cppia module that has been unloaded") );
+
       if (!booted)
          boot();
       if (cppia->main)
@@ -342,6 +436,11 @@ public:
             hx::Throw(error);
          }
       }
+   }
+
+   void unload() HXCPP_OVERRIDE
+   {
+      cppia->unload();
    }
 
    ::hx::Class resolveClass( ::String inName) HXCPP_OVERRIDE
@@ -369,6 +468,9 @@ CppiaLoadedModule LoadCppia(const unsigned char *inData, int inDataLength)
    CppiaLoadedModule loadedModule = new CppiaObject(cppiaPtr);
    gAllCppiaModules->push(loadedModule);
 
+   // Attribute every expression allocated from here on to this module.
+   sLoadingModule = cppiaPtr;
+
 
    CppiaModule   &cppia = *cppiaPtr;
    CppiaStream stream(cppiaPtr,inData, inDataLength);
@@ -378,7 +480,7 @@ CppiaLoadedModule LoadCppia(const unsigned char *inData, int inDataLength)
    {
       std::string tok = stream.getAsciiToken();
       if (tok!="CPPIA" && tok!="CPPIB")
-         throw "Bad magic";
+         throw cppiaError("Not a cppia script, expected the file to start with CPPIA or CPPIB but found '%.16s'", tok.c_str());
 
       stream.setBinary(tok=="CPPIB");
 
@@ -399,7 +501,7 @@ CppiaLoadedModule LoadCppia(const unsigned char *inData, int inDataLength)
       {
          int newLine = stream.getByte();
          if (newLine!='\n')
-            throw "Missing new-line after class count";
+            throw cppiaError("Expected a new-line after the class count but found byte 0x%02x, the header is corrupt", newLine);
       }
 
       cppia.classes.reserve(classCount);
@@ -419,7 +521,7 @@ CppiaLoadedModule LoadCppia(const unsigned char *inData, int inDataLength)
          cppia.main->functionName = "__cppia_main";
       }
       else if (tok!="NOMAIN")
-         throw "no main specified";
+         throw cppiaError("Expected MAIN or NOMAIN after the class list but found '%.32s'", tok.c_str());
 
       tok = stream.getToken();
       if (tok=="RESOURCES")
@@ -430,7 +532,7 @@ CppiaLoadedModule LoadCppia(const unsigned char *inData, int inDataLength)
          {
             tok = stream.getToken();
             if (tok!="RESO")
-               throw "no reso tag";
+               throw cppiaError("Expected RESO for resource %d of %d but found '%.32s'", r, count, tok.c_str());
 
             scriptResources[r].mName = cppia.strings[stream.getInt()];
             scriptResources[r].mDataLength = stream.getInt();
@@ -460,19 +562,19 @@ CppiaLoadedModule LoadCppia(const unsigned char *inData, int inDataLength)
          scriptResources[count].mDataLength = 0;
          scriptResources[count].mData = 0;
          scriptResources[count].mName = String();
-         
+
          RegisterResources(&scriptResources[0]);
       }
       else
-         throw "no resources tag";
+         throw cppiaError("Expected RESOURCES after the main section but found '%.32s'", tok.c_str());
 
 
    }
    catch(const char *errorString)
    {
-      error = HX_CSTRING("Error reading file ") + String(errorString) + 
-                HX_CSTRING(", line ") + String(stream.line) + HX_CSTRING(", char ") + 
-                   String(stream.pos);
+      error = HX_CSTRING("Error reading cppia data: ") + String(errorString) +
+                HX_CSTRING(" (cppia line ") + String(stream.line) + HX_CSTRING(", char ") +
+                   String(stream.pos) + HX_CSTRING(")");
    }
 
    if (!error.raw_ptr())
@@ -501,6 +603,8 @@ CppiaLoadedModule LoadCppia(const unsigned char *inData, int inDataLength)
          }
       #endif
    }
+
+   sLoadingModule = 0;
 
    if (error.raw_ptr())
       hx::Throw(error);

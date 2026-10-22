@@ -442,6 +442,37 @@ static int verify_callback(void* param, mbedtls_x509_crt *crt, int depth, uint32
 	CertCloseStore(store, 0);
 	return 0;
 }
+#elif defined(IPHONE) || defined(APPLETV)
+static int verify_callback(void *data, mbedtls_x509_crt *crt, int depth, uint32_t *flags) {
+	// use mbedtls validate the chain structure and we validate with the iOS system trust store to replace the missing CA bundle
+	if (depth != 0) {
+		*flags = 0;
+		return 0;
+	}
+
+	CFDataRef derData = CFDataCreate(NULL, crt->raw.p, crt->raw.len);
+	if (!derData) return 0;
+
+	SecCertificateRef secCert = SecCertificateCreateWithData(NULL, derData);
+	CFRelease(derData);
+	if (!secCert) return 0;
+
+	SecPolicyRef policy = SecPolicyCreateSSL(true, NULL);
+	CFArrayRef certs = CFArrayCreate(NULL, (const void **)&secCert, 1, &kCFTypeArrayCallBacks);
+	SecTrustRef trust = NULL;
+	SecTrustCreateWithCertificates(certs, policy, &trust);
+	CFRelease(certs);
+	CFRelease(policy);
+	CFRelease(secCert);
+
+	CFErrorRef err = NULL;
+	bool trusted = SecTrustEvaluateWithError(trust, &err);
+	CFRelease(trust);
+	if (err) CFRelease(err);
+
+	if (trusted) *flags = 0;
+	return 0;
+}
 #endif
 
 Dynamic _hx_ssl_conf_new( bool server ) {
@@ -454,7 +485,7 @@ Dynamic _hx_ssl_conf_new( bool server ) {
 		conf->destroy();
 		ssl_error( ret );
 	}
-#ifdef NEKO_WINDOWS
+#if defined(NEKO_WINDOWS) || defined(IPHONE) || defined(APPLETV)
 	mbedtls_ssl_conf_verify(conf->c, verify_callback, NULL);
 #endif
 	mbedtls_ssl_conf_rng( conf->c, mbedtls_ctr_drbg_random, &ctr_drbg );
@@ -501,16 +532,7 @@ static int apple_verify_cb(void *data, mbedtls_x509_crt *crt, int depth, uint32_
 
 void _hx_ssl_conf_set_ca( Dynamic hconf, Dynamic hcert ) {
 	sslconf *conf = val_conf(hconf);
-#if defined(IPHONE) || defined(APPLETV)
-	// always attach Apple system verification callback
-	mbedtls_ssl_conf_verify(conf->c, apple_verify_cb, NULL);
-
-	sslcert *cert = val_cert(hcert);
-	// make sure the ca chain is set even if null
-	mbedtls_ssl_conf_ca_chain(conf->c, cert ? cert->c : NULL, NULL);
-
-#else
-	if( hconf.mPtr ){
+	if( hcert.mPtr ){
 		sslcert *cert = val_cert(hcert);
 		mbedtls_ssl_conf_ca_chain( conf->c, cert->c, NULL );
 	}else{
