@@ -538,7 +538,6 @@ void _hx_ssl_conf_set_ca( Dynamic hconf, Dynamic hcert ) {
 	}else{
 		mbedtls_ssl_conf_ca_chain( conf->c, NULL, NULL );
 	}
-#endif
 }
 
 void _hx_ssl_conf_set_verify( Dynamic hconf, int mode ) {
